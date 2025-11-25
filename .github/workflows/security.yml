@@ -1,0 +1,96 @@
+name: Security CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # =========================
+  # 1) SCA - dependency scan
+  # =========================
+  sca:
+    name: SCA - Dependency analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Dependency-Check with Maven plugin
+      - name: Run OWASP Dependency-Check (Maven)
+        run: |
+          mvn -q org.owasp:dependency-check-maven:check || true
+
+      - name: Upload SCA report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-report
+          path: |
+            ./target/dependency-check-report.html
+            ./target/dependency-check-report.xml
+          if-no-files-found: ignore
+
+  # =========================
+  # 2) SAST - static analysis
+  # =========================
+  sast:
+    name: SAST - Source code analysis
+    runs-on: ubuntu-latest
+    needs: sca   # second stage after SCA
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Semgrep SAST scan (includes Java rules like OWASP Top 10)
+      - name: Semgrep SAST scan
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/owasp-top-ten
+          output: sast-report.sarif
+
+      - name: Upload SAST report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-report
+          path: sast-report.sarif
+          if-no-files-found: ignore
+
+  # =========================
+  # 3) Secret scanning
+  # =========================
+  secrets:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    needs: sast   # third stage
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Gitleaks
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/repo" \
+            zricethezav/gitleaks:latest detect \
+              --source=/repo \
+              --report-format=json \
+              --report-path=/repo/secrets-report.json || true
+
+      - name: Upload secrets report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: secrets-report
+          path: secrets-report.json
+          if-no-files-found: ignore
