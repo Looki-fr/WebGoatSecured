@@ -24,27 +24,36 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Snyk CLI
+      # ✅ Install Snyk CLI from the official CDN (no more 404 HTML page)
+      - name: Download Snyk CLI
         run: |
-          curl -sL https://snyk.io/install.sh | bash
+          curl --compressed https://downloads.snyk.io/cli/stable/snyk-linux -o snyk
+          chmod +x ./snyk
 
+      # ✅ Authenticate using your SNYK_TOKEN GitHub secret
       - name: Authenticate Snyk
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
-          ~/.snyk/snyk auth ${{ secrets.SNYK_TOKEN }}
+          ./snyk auth "$SNYK_TOKEN"
 
+      # ✅ Run SCA on all Maven projects in the repo
       - name: Run Snyk SCA (Maven)
         run: |
-          ~/.snyk/snyk test --all-projects --detection-depth=4 || true
+          ./snyk test --all-projects --detection-depth=4 || true
 
+      # ✅ Generate JSON report to upload as artifact
       - name: Save Snyk report
         run: |
-          ~/.snyk/snyk test --json > snyk-sca-report.json || true
+          ./snyk test --all-projects --detection-depth=4 --json > snyk-sca-report.json || true
 
       - name: Upload Snyk SCA report
         uses: actions/upload-artifact@v4
         with:
           name: snyk-sca-report
           path: snyk-sca-report.json
+          if-no-files-found: ignore
+
 
   # =========================
   # 2) SAST - static analysis
