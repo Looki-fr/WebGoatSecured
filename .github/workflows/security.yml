@@ -11,7 +11,7 @@ jobs:
   # 1) SCA - dependency scan
   # =========================
   sca:
-    name: SCA - Dependency analysis
+    name: SCA - Dependency analysis (Snyk)
     runs-on: ubuntu-latest
 
     steps:
@@ -24,20 +24,27 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # Dependency-Check with Maven plugin
-      - name: Run OWASP Dependency-Check (Maven)
+      - name: Install Snyk CLI
         run: |
-          mvn -q org.owasp:dependency-check-maven:check || true
+          curl -sL https://snyk.io/install.sh | bash
 
-      - name: Upload SCA report
-        if: always()
+      - name: Authenticate Snyk
+        run: |
+          ~/.snyk/snyk auth ${{ secrets.SNYK_TOKEN }}
+
+      - name: Run Snyk SCA (Maven)
+        run: |
+          ~/.snyk/snyk test --all-projects --detection-depth=4 || true
+
+      - name: Save Snyk report
+        run: |
+          ~/.snyk/snyk test --json > snyk-sca-report.json || true
+
+      - name: Upload Snyk SCA report
         uses: actions/upload-artifact@v4
         with:
-          name: sca-report
-          path: |
-            ./target/dependency-check-report.html
-            ./target/dependency-check-report.xml
-          if-no-files-found: ignore
+          name: snyk-sca-report
+          path: snyk-sca-report.json
 
   # =========================
   # 2) SAST - static analysis
